@@ -27,6 +27,9 @@ RUN apt-get install -y subversion git-core tar unzip wget bzip2 build-essential 
 
 RUN apt-get install -y autoconf apache2-dev libtool libxml2-dev libbz2-dev libgeos-dev libgeos++-dev libproj-dev gdal-bin libgdal1-dev mapnik-utils python-mapnik libmapnik-dev
 
+# Install OpenTopoMap dependencies
+RUN apt-get install -y python3-setuptools python3-matplotlib python3-bs4 python3-numpy python3-gdal python-gdal
+
 # Install postgresql and postgis
 RUN apt-get install -y postgresql-9.3-postgis-2.1 postgresql-contrib postgresql-server-dev-9.3
 
