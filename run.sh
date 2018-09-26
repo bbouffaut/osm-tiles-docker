@@ -64,7 +64,7 @@ createdb () {
     $asweb psql -d $dbname -f /usr/share/postgresql/9.3/contrib/postgis-2.1/spatial_ref_sys.sql
 }
 
-process_opentopomap_data() {
+process_opentopomap_data () {
     # Download OpenTopoMap data
     cd ~
     git clone https://github.com/der-stefan/OpenTopoMap.git
@@ -75,12 +75,17 @@ process_opentopomap_data() {
     wget http://data.openstreetmapdata.com/water-polygons-split-3857.zip
     unzip water-polygons-generalized-3857.zip
     unzip water-polygons-split-3857.zip
+    rm *.zip
+
+    # Configure Python 3 as default
+    echo 'alias python=python3' >> /root/.bashrc
 
     # Install phyghtmap
     mkdir ~/src
     cd ~/src
     wget http://katze.tfiu.de/projects/phyghtmap/phyghtmap_2.10.orig.tar.gz
     tar -xvzf phyghtmap_2.10.orig.tar.gz
+    rm *.gz
     cd phyghtmap-2.10
     python3 setup.py install
 
@@ -96,6 +101,7 @@ process_opentopomap_data() {
 
     # Unpack all zip files
     for zipfile in *.zip;do unzip -j -o "$zipfile" -d unpacked; done
+    rm *.zip
 
     # Fill all voids
     cd unpacked
@@ -128,7 +134,7 @@ process_opentopomap_data() {
 
 }
 
-create_contours_db() {
+create_contours_db () {
 
     # Create contours database
     setuser postgres createdb -O www-data contours
@@ -139,7 +145,7 @@ create_contours_db() {
 
 }
 
-import_osm_data_with_right_style() {
+import_osm_data_with_right_style () {
 
     # load data with right style
     import=${OSM_IMPORT_FILE:-$( ls -1t /data/import.pbf /data/import.osm 2>/dev/null | head -1 )}
@@ -151,7 +157,7 @@ import_osm_data_with_right_style() {
 
 }
 
-preprocess_opentopomap() {
+preprocess_opentopomap () {
 
     # Preprocessing
     cd ~/OpenTopoMap/mapnik/tools/
@@ -172,7 +178,7 @@ preprocess_opentopomap() {
 
 }
 
-configure_renderd_for_opentopomap() {
+configure_renderd_for_opentopomap () {
 
     cp ~/OpenTopoMap/mapnik/opentopomap.xml /usr/local/src/mapnik-style/osm.xml
 
