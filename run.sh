@@ -6,6 +6,17 @@
 
 # Command prefix that runs the command as the web user
 asweb="setuser www-data"
+HOME=/root
+
+install_pyenv () {
+    curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
+}
+
+set_pyenv () {
+    pyenv=$HOME/.pyenv/bin/pyenv
+    pyenv install 3.6.4
+    pyenv global 3.6.4
+}
 
 die () {
     msg=$1
@@ -65,8 +76,13 @@ createdb () {
 }
 
 process_opentopomap_data () {
+
+    # install pyenv
+    install_pyenv
+    set_pyenv
+
     # Download OpenTopoMap data
-    cd ~
+    cd $ROOT
     git clone https://github.com/der-stefan/OpenTopoMap.git
 
     # Get the generalized water polygons from http://openstreetmapdata.com/:
@@ -78,11 +94,12 @@ process_opentopomap_data () {
     rm *.zip
 
     # Configure Python 3 as default
-    echo 'alias python=python3' >> /root/.bashrc
+    echo 'alias python=python3' >> $HOME/.bashrc
+    source $HOME/.bashrc
 
     # Install phyghtmap
-    mkdir ~/src
-    cd ~/src
+    mkdir $HOME/src
+    cd $HOME/src
     wget http://katze.tfiu.de/projects/phyghtmap/phyghtmap_2.10.orig.tar.gz
     tar -xvzf phyghtmap_2.10.orig.tar.gz
     rm *.gz
@@ -119,8 +136,8 @@ process_opentopomap_data () {
     gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 90 90 raw.tif warp-90.tif
 
     # Create color relief for different zoom levels
-    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-5000.tif ~/OpenTopoMap/mapnik/relief_color_text_file.txt relief-5000.tif
-    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-500.tif ~/OpenTopoMap/mapnik/relief_color_text_file.txt relief-500.tif
+    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-5000.tif $HOME/OpenTopoMap/mapnik/relief_color_text_file.txt relief-5000.tif
+    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-500.tif $HOME/OpenTopoMap/mapnik/relief_color_text_file.txt relief-500.tif
 
     # Create hillshade for different zoom levels
     gdaldem hillshade -z 7 -compute_edges -co COMPRESS=JPEG warp-5000.tif hillshade-5000.tif
@@ -160,7 +177,7 @@ import_osm_data_with_right_style () {
 preprocess_opentopomap () {
 
     # Preprocessing
-    cd ~/OpenTopoMap/mapnik/tools/
+    cd $HOME/OpenTopoMap/mapnik/tools/
     cc -o saddledirection saddledirection.c -lm -lgdal
     cc -Wall -o isolation isolation.c -lgdal -lm -O2
     $asweb psql gis < arealabel.sql
@@ -180,14 +197,14 @@ preprocess_opentopomap () {
 
 configure_renderd_for_opentopomap () {
 
-    cp ~/OpenTopoMap/mapnik/opentopomap.xml /usr/local/src/mapnik-style/osm.xml
+    cp $HOME/OpenTopoMap/mapnik/opentopomap.xml /usr/local/src/mapnik-style/osm.xml
 
     cd /data
     gdaldem hillshade -z 5 -compute_edges -co BIGTIFF=YES -co TILED=YES -co COMPRESS=JPEG warp-500.tif hillshade-500.tif
     gdaldem hillshade -z 5 -compute_edges -co BIGTIFF=YES -co TILED=YES -co COMPRESS=JPEG warp-90.tif hillshade-30m-jpeg.tif
 
-    mkdir ~/OpenTopoMap/mapnik/dem
-    cd ~/OpenTopoMap/mapnik/dem
+    mkdir $HOME/OpenTopoMap/mapnik/dem
+    cd $HOME/OpenTopoMap/mapnik/dem
     ln -s /data/*.tif .
 
 }
