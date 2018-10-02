@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 ##
 # Run OpenStreetMap tile server operations
@@ -8,14 +8,14 @@
 asweb="setuser www-data"
 HOME=/root
 
-install_pyenv () {
-    curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
-}
-
-set_pyenv () {
-    pyenv=$HOME/.pyenv/bin/pyenv
-    pyenv install 3.6.4
-    pyenv global 3.6.4
+switch_to_python3 () {
+    #cd $HOME
+    #pip3 install virtualenvwrapper
+    #export WORKON_HOME=$HOME/.virtualenvs
+    #export PROJECT_HOME=$HOME/Devel
+    #source /usr/local/bin/virtualenvwrapper.sh
+    #mkvirtualenv virtualenv_python3
+    rm -f /usr/bin/python && ln -s /usr/bin/python3 /usr/bin/python
 }
 
 die () {
@@ -34,15 +34,15 @@ startdb () {
 
 initdb () {
     echo "Initialising postgresql"
-    if [ -d /var/lib/postgresql/9.3/main ] && [ $( ls -A /var/lib/postgresql/9.3/main | wc -c ) -ge 0 ]
+    if [ -d /var/lib/postgresql/9.5/main ] && [ $( ls -A /var/lib/postgresql/9.5/main | wc -c ) -ge 0 ]
     then
-        die "Initialisation failed: the directory is not empty: /var/lib/postgresql/9.3/main"
+        die "Initialisation failed: the directory is not empty: /var/lib/postgresql/9.5/main"
     fi
 
-    mkdir -p /var/lib/postgresql/9.3/main && chown -R postgres /var/lib/postgresql/
-    sudo -u postgres -i /usr/lib/postgresql/9.3/bin/initdb --pgdata /var/lib/postgresql/9.3/main
-    ln -s /etc/ssl/certs/ssl-cert-snakeoil.pem /var/lib/postgresql/9.3/main/server.crt
-    ln -s /etc/ssl/private/ssl-cert-snakeoil.key /var/lib/postgresql/9.3/main/server.key
+    mkdir -p /var/lib/postgresql/9.5/main && chown -R postgres /var/lib/postgresql/ && chmod 0700 /var/lib/postgresql/9.5/main
+    sudo -u postgres -i /usr/lib/postgresql/9.5/bin/initdb --pgdata /var/lib/postgresql/9.5/main
+    ln -s /etc/ssl/certs/ssl-cert-snakeoil.pem /var/lib/postgresql/9.5/main/server.crt
+    ln -s /etc/ssl/private/ssl-cert-snakeoil.key /var/lib/postgresql/9.5/main/server.key
 
     startdb
     createuser
@@ -64,7 +64,7 @@ createdb () {
     setuser postgres createdb -O www-data $dbname
 
     # Install the Postgis schema
-    $asweb psql -d $dbname -f /usr/share/postgresql/9.3/contrib/postgis-2.1/postgis.sql
+    $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/postgis.sql
 
     $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;'
 
@@ -72,14 +72,10 @@ createdb () {
     $asweb psql -d $dbname -c 'ALTER TABLE geometry_columns OWNER TO "www-data"; ALTER TABLE spatial_ref_sys OWNER TO "www-data";'
 
     # Add Spatial Reference Systems from PostGIS
-    $asweb psql -d $dbname -f /usr/share/postgresql/9.3/contrib/postgis-2.1/spatial_ref_sys.sql
+    $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/spatial_ref_sys.sql
 }
 
 process_opentopomap_data () {
-
-    # install pyenv
-    install_pyenv
-    set_pyenv
 
     # Download OpenTopoMap data
     cd $ROOT
@@ -93,18 +89,6 @@ process_opentopomap_data () {
     unzip water-polygons-split-3857.zip
     rm *.zip
 
-    # Configure Python 3 as default
-    echo 'alias python=python3' >> $HOME/.bashrc
-    source $HOME/.bashrc
-
-    # Install phyghtmap
-    mkdir $HOME/src
-    cd $HOME/src
-    wget http://katze.tfiu.de/projects/phyghtmap/phyghtmap_2.10.orig.tar.gz
-    tar -xvzf phyghtmap_2.10.orig.tar.gz
-    rm *.gz
-    cd phyghtmap-2.10
-    python3 setup.py install
 
     #Download all SRTM tiles you need
     mkdir /data/srtm
@@ -145,10 +129,18 @@ process_opentopomap_data () {
     gdaldem hillshade -z 4 -compute_edges -co BIGTIFF=YES -co TILED=YES -co COMPRESS=JPEG warp-700.tif hillshade-700.tif
     gdaldem hillshade -z 2 -co compress=lzw -co predictor=2 -co bigtiff=yes -compute_edges warp-90.tif hillshade-90.tif && gdal_translate -co compress=JPEG -co bigtiff=yes -co tiled=yes hillshade-90.tif hillshade-90-jpeg.tif
 
+}
+
+build_contours () {
+
+    switch_to_python3
+
+    # Install phyghtmap
+    cd /data
     # Create contour lines
+    export HOME=/root
     phyghtmap --max-nodes-per-tile=0 -s 10 -0 --pbf warp-90.tif
     mv lon-*.osm.pbf contours.pbf
-
 }
 
 create_contours_db () {
