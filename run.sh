@@ -29,6 +29,7 @@ _startservice () {
 }
 
 startdb () {
+    mkdir -p /var/run/postgresql/9.5-main.pg_stat_tmp
     _startservice postgresql
 }
 
@@ -66,7 +67,7 @@ createdb () {
     # Install the Postgis schema
     $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/postgis.sql
 
-    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;'
+    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
 
     # Set the correct table ownership
     $asweb psql -d $dbname -c 'ALTER TABLE geometry_columns OWNER TO "www-data"; ALTER TABLE spatial_ref_sys OWNER TO "www-data";'
@@ -76,10 +77,6 @@ createdb () {
 }
 
 process_opentopomap_data () {
-
-    # Download OpenTopoMap data
-    cd $ROOT
-    git clone https://github.com/der-stefan/OpenTopoMap.git
 
     # Get the generalized water polygons from http://openstreetmapdata.com/:
     cd /data
@@ -120,8 +117,8 @@ process_opentopomap_data () {
     gdalwarp -co BIGTIFF=YES -co TILED=YES -co COMPRESS=LZW -co PREDICTOR=2 -t_srs "+proj=merc +ellps=sphere +R=6378137 +a=6378137 +units=m" -r bilinear -tr 90 90 raw.tif warp-90.tif
 
     # Create color relief for different zoom levels
-    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-5000.tif $HOME/OpenTopoMap/mapnik/relief_color_text_file.txt relief-5000.tif
-    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-500.tif $HOME/OpenTopoMap/mapnik/relief_color_text_file.txt relief-500.tif
+    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-5000.tif /data/OpenTopoMap/mapnik/relief_color_text_file.txt relief-5000.tif
+    gdaldem color-relief -co COMPRESS=LZW -co PREDICTOR=2 -alpha warp-500.tif /data/OpenTopoMap/mapnik/relief_color_text_file.txt relief-500.tif
 
     # Create hillshade for different zoom levels
     gdaldem hillshade -z 7 -compute_edges -co COMPRESS=JPEG warp-5000.tif hillshade-5000.tif
@@ -145,16 +142,31 @@ build_contours () {
 
 create_contours_db () {
 
+    #build_contours
+    build_contours
+
+    dbname=contours
+    # update postgre configuration
+    echo 'local contours www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
+
+    startdb
+
+    # load data with right style
+    import="/data/contours.pbf"
+    test -f ${import} || \
+        die "No contours import file present: run build_contours before running create_contours_db"
+
     # Create contours database
     setuser postgres createdb -O www-data contours
-    $asweb postgres psql -d contours -c 'CREATE EXTENSION postgis;'
+
+    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
 
     # Load contour file into database
-    $asweb osm2pgsql --slim -d contours -C 12000 --number-processes 10 --style ~/OpenTopoMap/mapnik/osm2pgsql/contours.style /data/contours.pbf
+    $asweb osm2pgsql --slim -d contours -C 12000 --number-processes 10 --style $HOME/OpenTopoMap/mapnik/osm2pgsql/contours.style ${import}
 
 }
 
-import_osm_data_with_right_style () {
+import_osm_data_with_opentopomap_style () {
 
     # load data with right style
     import=${OSM_IMPORT_FILE:-$( ls -1t /data/import.pbf /data/import.osm 2>/dev/null | head -1 )}
@@ -162,7 +174,7 @@ import_osm_data_with_right_style () {
         die "No import file present: expected specification via OSM_IMPORT_FILE or existence of /data/import.osm or /data/import.pbf"
 
     echo "Importing ${import} into gis"
-    $asweb osm2pgsql --slim -d gis -C 12000 --number-processes 10 --style ~/OpenTopoMap/mapnik/osm2pgsql/opentopomap.style ${import}
+    $asweb osm2pgsql --slim -d gis -C 12000 --number-processes 10 --style $HOME/OpenTopoMap/mapnik/osm2pgsql/opentopomap.style ${import}
 
 }
 
@@ -173,23 +185,21 @@ preprocess_opentopomap () {
     cc -o saddledirection saddledirection.c -lm -lgdal
     cc -Wall -o isolation isolation.c -lgdal -lm -O2
     $asweb psql gis < arealabel.sql
-    ./update_lowzoom.sh
+    # update postgre configuration
+    echo 'local lowzoom www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
+    echo 'local postgres www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
+    echo 'local template1 www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
+    $asweb ./update_lowzoom.sh
 
     sed -i 's/mapnik\/dem\/dem-srtm\.tiff/\/data\/raw\.tif/g' update_saddles.sh
     sed -i 's/mapnik\/dem\/dem-srtm\.tiff/\/data\/raw\.tif/g' update_isolations.sh
 
-    ./update_saddles.sh
-    ./update_isolations.sh
+    $asweb ./update_saddles.sh
+    $asweb ./update_isolations.sh
 
     $asweb psql gis < stationdirection.sql
     $asweb psql gis < viewpointdirection.sql
     $asweb psql gis < pitchicon.sql
-
-}
-
-configure_renderd_for_opentopomap () {
-
-    cp $HOME/OpenTopoMap/mapnik/opentopomap.xml /usr/local/src/mapnik-style/osm.xml
 
     cd /data
     gdaldem hillshade -z 5 -compute_edges -co BIGTIFF=YES -co TILED=YES -co COMPRESS=JPEG warp-500.tif hillshade-500.tif
@@ -198,6 +208,12 @@ configure_renderd_for_opentopomap () {
     mkdir $HOME/OpenTopoMap/mapnik/dem
     cd $HOME/OpenTopoMap/mapnik/dem
     ln -s /data/*.tif .
+
+}
+
+configure_renderd_for_opentopomap () {
+
+    sed -i 's/\/usr\/local\/src\/mapnik-style\/osm.xml/\/root\/OpenTopoMap\/mapnik\/opentopomap\.xml/g' /usr/local/etc/renderd.conf
 
 }
 
@@ -261,6 +277,16 @@ startservices () {
     startdb
     _startservice renderd
     _startservice apache2
+}
+
+startservices_opentopomap () {
+    configure_renderd_for_opentopomap
+    startservices
+}
+
+render_opentopomap () {
+    configure_renderd_for_opentopomap
+    render
 }
 
 startweb () {

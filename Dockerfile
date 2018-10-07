@@ -69,6 +69,9 @@ RUN cd /usr/local/src && svn co http://svn.openstreetmap.org/applications/render
 # Install the coastline data
 RUN cd /usr/local/src/mapnik-style && ./get-coastlines.sh /usr/local/share
 
+# Download OpenTopoMap data
+RUN cd /root && git clone https://github.com/der-stefan/OpenTopoMap.git && chmod go+rx /root/
+
 # Configure mapnik style-sheets
 RUN cd /usr/local/src/mapnik-style/inc && cp fontset-settings.xml.inc.template fontset-settings.xml.inc
 ADD datasource-settings.sed /tmp/
@@ -85,7 +88,7 @@ RUN mkdir /var/run/renderd && chown www-data: /var/run/renderd
 RUN mkdir /var/lib/mod_tile && chown www-data /var/lib/mod_tile
 
 # Replace default apache index page with OpenLayers demo
-ADD index.html /var/www/html/index.html
+ADD www/* /var/www/html/
 
 # Configure mod_tile
 ADD mod_tile.load /etc/apache2/mods-available/
@@ -119,7 +122,7 @@ RUN update-service --add /etc/sv/renderd
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Expose the webserver and database ports
-EXPOSE 80 5432
+EXPOSE 80 80
 
 # We need the volume for importing data from
 VOLUME ["/data"]
