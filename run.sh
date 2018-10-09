@@ -76,6 +76,92 @@ createdb () {
     $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/spatial_ref_sys.sql
 }
 
+
+import () {
+    startdb
+    # Assign from env var or find the most recent import.pbf or import.osm
+    import=${OSM_IMPORT_FILE:-$( ls -1t /data/import.pbf /data/import.osm 2>/dev/null | head -1 )}
+    test -n "${import}" || \
+        die "No import file present: expected specification via OSM_IMPORT_FILE or existence of /data/import.osm or /data/import.pbf"
+
+    echo "Importing ${import} into gis"
+    echo "$OSM_IMPORT_CACHE" | grep -P '^[0-9]+$' || \
+        die "Unexpected cache type: expected an integer but found: ${OSM_IMPORT_CACHE}"
+
+    number_processes=`nproc`
+
+    # Limit to 8 to prevent overwhelming pg with connections
+    if test $number_processes -ge 8
+    then
+        number_processes=8
+    fi
+
+    $asweb osm2pgsql --slim --hstore --cache $OSM_IMPORT_CACHE --database gis --number-processes $number_processes $import
+}
+
+# render tiles via render_list
+render () {
+    startdb
+    _startservice renderd
+    # wait for services to start
+    sleep 10
+    min_zoom=${OSM_MIN_ZOOM:-0}
+    max_zoom=${OSM_MAX_ZOOM:-8}
+    render_force_arg=$( [ "$OSM_RENDER_FORCE" != false ] && echo '--force' || echo '' )
+    number_processes=${OSM_RENDER_THREADS:-`nproc`}
+    # Limit to 8 to prevent overwhelming pg with connections
+    if test $number_processes -ge 8
+    then
+        number_processes=8
+    fi
+    echo "Rendering OSM tiles"
+
+    $asweb render_list $render_force_arg --all --min-zoom $min_zoom --max-zoom $max_zoom --num-threads $number_processes
+}
+
+
+dropdb () {
+    echo "Dropping database"
+    cd /var/www
+    setuser postgres dropdb gis
+}
+
+cli () {
+    echo "Running bash"
+    cd /var/www
+    exec bash
+}
+
+startservices () {
+    startdb
+    _startservice renderd
+    _startservice apache2
+}
+
+startweb () {
+    _startservice apache2
+}
+
+help () {
+    cat /usr/local/share/doc/run/help.txt
+    exit
+}
+
+# wait until 2 seconds after boot when runit will have started supervising the services.
+
+sleep 2
+
+# Execute the specified command sequence
+for arg
+do
+    $arg;
+done
+
+
+##################################################
+# OpenTopoMap features
+##################################################
+
 process_opentopomap_data () {
 
     # Get the generalized water polygons from http://openstreetmapdata.com/:
@@ -146,9 +232,6 @@ create_contours_db () {
     build_contours
 
     dbname=contours
-    # update postgre configuration
-    echo 'local contours www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
-
     startdb
 
     # load data with right style
@@ -167,7 +250,6 @@ create_contours_db () {
 }
 
 import_osm_data_with_opentopomap_style () {
-
     # load data with right style
     import=${OSM_IMPORT_FILE:-$( ls -1t /data/import.pbf /data/import.osm 2>/dev/null | head -1 )}
     test -n "${import}" || \
@@ -178,17 +260,14 @@ import_osm_data_with_opentopomap_style () {
 
 }
 
-preprocess_opentopomap () {
 
+preprocess_opentopomap () {
     # Preprocessing
     cd $HOME/OpenTopoMap/mapnik/tools/
     cc -o saddledirection saddledirection.c -lm -lgdal
     cc -Wall -o isolation isolation.c -lgdal -lm -O2
     $asweb psql gis < arealabel.sql
     # update postgre configuration
-    echo 'local lowzoom www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
-    echo 'local postgres www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
-    echo 'local template1 www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
     $asweb ./update_lowzoom.sh
 
     sed -i 's/mapnik\/dem\/dem-srtm\.tiff/\/data\/raw\.tif/g' update_saddles.sh
@@ -211,72 +290,26 @@ preprocess_opentopomap () {
 
 }
 
+# MAin entrypoint for importing OpenTopoMap
+build_and_import_opentopomap () {
+    process_opentopomap_data
+    create_contours_db
+    import_osm_data_with_opentopomap_style
+    preprocess_opentopomap
+}
+
 configure_renderd_for_opentopomap () {
 
-    sed -i 's/\/usr\/local\/src\/mapnik-style\/osm.xml/\/root\/OpenTopoMap\/mapnik\/opentopomap\.xml/g' /usr/local/etc/renderd.conf
+    sed -i 's/\/osm_tiles\//\/opentopomap_tiles\//g' /usr/local/etc/renderd.conf
 
-}
-
-
-import () {
-    startdb
-    # Assign from env var or find the most recent import.pbf or import.osm
-    import=${OSM_IMPORT_FILE:-$( ls -1t /data/import.pbf /data/import.osm 2>/dev/null | head -1 )}
-    test -n "${import}" || \
-        die "No import file present: expected specification via OSM_IMPORT_FILE or existence of /data/import.osm or /data/import.pbf"
-
-    echo "Importing ${import} into gis"
-    echo "$OSM_IMPORT_CACHE" | grep -P '^[0-9]+$' || \
-        die "Unexpected cache type: expected an integer but found: ${OSM_IMPORT_CACHE}"
-
-    number_processes=`nproc`
-
-    # Limit to 8 to prevent overwhelming pg with connections
-    if test $number_processes -ge 8
+    if [ ! -d $HOME/OpenTopoMap/mapnik/dem ]
     then
-        number_processes=8
+        $asweb mkdir $HOME/OpenTopoMap/mapnik/dem
     fi
 
-    $asweb osm2pgsql --slim --hstore --cache $OSM_IMPORT_CACHE --database gis --number-processes $number_processes $import
-}
+    cd $HOME/OpenTopoMap/mapnik/dem
+    $asweb ln -s /data/*.tif .
 
-# render tiles via render_list
-render () {
-    startdb
-    _startservice renderd
-    # wait for services to start
-    sleep 10
-    min_zoom=${OSM_MIN_ZOOM:-0}
-    max_zoom=${OSM_MAX_ZOOM:-8}
-    render_force_arg=$( [ "$OSM_RENDER_FORCE" != false ] && echo '--force' || echo '' )
-    number_processes=${OSM_RENDER_THREADS:-`nproc`}
-    # Limit to 8 to prevent overwhelming pg with connections
-    if test $number_processes -ge 8
-    then
-        number_processes=8
-    fi
-    echo "Rendering OSM tiles"
-
-    $asweb render_list $render_force_arg --all --min-zoom $min_zoom --max-zoom $max_zoom --num-threads $number_processes
-}
-
-
-dropdb () {
-    echo "Dropping database"
-    cd /var/www
-    setuser postgres dropdb gis
-}
-
-cli () {
-    echo "Running bash"
-    cd /var/www
-    exec bash
-}
-
-startservices () {
-    startdb
-    _startservice renderd
-    _startservice apache2
 }
 
 startservices_opentopomap () {
@@ -288,25 +321,6 @@ render_opentopomap () {
     configure_renderd_for_opentopomap
     render
 }
-
-startweb () {
-    _startservice apache2
-}
-
-help () {
-    cat /usr/local/share/doc/run/help.txt
-    exit
-}
-
-# wait until 2 seconds after boot when runit will have started supervising the services.
-
-sleep 2
-
-# Execute the specified command sequence
-for arg
-do
-    $arg;
-done
 
 # Unless there is a terminal attached don't exit, otherwise docker
 # will also exit

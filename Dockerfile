@@ -70,7 +70,7 @@ RUN cd /usr/local/src && svn co http://svn.openstreetmap.org/applications/render
 RUN cd /usr/local/src/mapnik-style && ./get-coastlines.sh /usr/local/share
 
 # Download OpenTopoMap data
-RUN cd /root && git clone https://github.com/der-stefan/OpenTopoMap.git && chmod go+rx /root/
+RUN cd /root && git clone https://github.com/der-stefan/OpenTopoMap.git && chmod go+rx /root/ && ln -s /data /root/OpenTopoMap/mapnik/ && chown -R www-data OpenTopoMap
 
 # Configure mapnik style-sheets
 RUN cd /usr/local/src/mapnik-style/inc && cp fontset-settings.xml.inc.template fontset-settings.xml.inc
@@ -80,8 +80,8 @@ ADD settings.sed /tmp/
 RUN cd /usr/local/src/mapnik-style/inc && sed --file /tmp/settings.sed  settings.xml.inc.template > settings.xml.inc
 
 # Configure renderd
-ADD renderd.conf.sed /tmp/
-RUN cd /usr/local/etc && sed --file /tmp/renderd.conf.sed --in-place renderd.conf
+ADD renderd.conf /tmp/
+RUN cd /usr/local/etc && mv /tmp/renderd.conf .
 
 # Create the files required for the mod_tile system to run
 RUN mkdir /var/run/renderd && chown www-data: /var/run/renderd
@@ -97,6 +97,10 @@ RUN a2enmod mod_tile
 
 # Ensure the webserver user can connect to the gis database
 RUN sed -i -e 's/local   all             all                                     peer/local gis www-data peer/' /etc/postgresql/9.5/main/pg_hba.conf
+RUN echo 'local lowzoom www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local postgres www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local template1 www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local contours www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
 
 # Tune postgresql
 ADD postgresql.conf.sed /tmp/
