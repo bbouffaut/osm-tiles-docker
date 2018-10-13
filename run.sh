@@ -132,13 +132,34 @@ cli () {
     exec bash
 }
 
-startservices () {
-    startdb
+configure_renderd_for_osm () {
+    sed -i 's/URI/osm/g' /var/www/html/index.html
+    sed -i 's/PATH_TO_BE_REPLACED/osm/g' /usr/local/etc/renderd.conf
+
+    if [ ! -d /var/lib/mod_tile/osm ]
+    then
+        mkdir /var/lib/mod_tile/osm && chown www-data /var/lib/mod_tile/osm
+    fi
+}
+
+startservices_render_osm () {
+    configure_renderd_for_osm
+    #startdb
     _startservice renderd
     _startservice apache2
 }
 
+startservices_postgis () {
+    startdb
+}
+
+render_osm () {
+    configure_renderd_for_osm
+    render
+}
+
 startweb () {
+    configure_renderd_for_osm
     _startservice apache2
 }
 
@@ -146,17 +167,6 @@ help () {
     cat /usr/local/share/doc/run/help.txt
     exit
 }
-
-# wait until 2 seconds after boot when runit will have started supervising the services.
-
-sleep 2
-
-# Execute the specified command sequence
-for arg
-do
-    $arg;
-done
-
 
 ##################################################
 # OpenTopoMap features
@@ -299,8 +309,13 @@ build_and_import_opentopomap () {
 }
 
 configure_renderd_for_opentopomap () {
+    sed -i 's/PATH_TO_BE_REPLACED/opentopomap/g' /usr/local/etc/renderd.conf
+    sed -i 's/URI/opentopomap/g' /var/www/html/index.html
 
-    sed -i 's/\/osm_tiles\//\/opentopomap_tiles\//g' /usr/local/etc/renderd.conf
+    if [ ! -d /var/lib/mod_tile/opentopomap ]
+    then
+        mkdir /var/lib/mod_tile/opentopomap && chown www-data /var/lib/mod_tile/opentopomap
+    fi
 
     if [ ! -d $HOME/OpenTopoMap/mapnik/dem ]
     then
@@ -312,15 +327,28 @@ configure_renderd_for_opentopomap () {
 
 }
 
-startservices_opentopomap () {
+startservices_render_opentopomap () {
     configure_renderd_for_opentopomap
-    startservices
+    #startdb
+    _startservice renderd
+    _startservice apache2
 }
 
 render_opentopomap () {
     configure_renderd_for_opentopomap
     render
 }
+
+# wait until 2 seconds after boot when runit will have started supervising the services.
+
+sleep 2
+
+# Execute the specified command sequence
+for arg
+do
+    $arg;
+done
+
 
 # Unless there is a terminal attached don't exit, otherwise docker
 # will also exit
