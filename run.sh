@@ -67,7 +67,8 @@ createdb () {
     # Install the Postgis schema
     $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/postgis.sql
 
-    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
+    #$asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
+    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;'
 
     # Set the correct table ownership
     $asweb psql -d $dbname -c 'ALTER TABLE geometry_columns OWNER TO "www-data"; ALTER TABLE spatial_ref_sys OWNER TO "www-data";'

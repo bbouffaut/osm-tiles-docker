@@ -97,6 +97,11 @@ RUN a2enmod mod_tile
 
 # Ensure the webserver user can connect to the gis database
 RUN sed -i -e 's/local   all             all                                     peer/host all all 0\.0\.0\.0\/0 trust/' /etc/postgresql/9.5/main/pg_hba.conf
+RUN echo 'local gis www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local lowzoom www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local postgres www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local template1 www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf && \
+    echo 'local contours www-data peer' >> /etc/postgresql/9.5/main/pg_hba.conf
 
 # Tune postgresql
 ADD postgresql.conf.sed /tmp/
