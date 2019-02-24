@@ -28,6 +28,26 @@ _startservice () {
     sv start $1 || die "Could not start $1"
 }
 
+createdb () {
+    dbname=$1
+    echo "Creating database $dbname"
+
+    # Create the database
+    setuser postgres createdb -O www-data $dbname
+
+    # Install the Postgis schema
+    $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/postgis.sql
+
+    #$asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
+    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;'
+
+    # Set the correct table ownership
+    $asweb psql -d $dbname -c 'ALTER TABLE geometry_columns OWNER TO "www-data"; ALTER TABLE spatial_ref_sys OWNER TO "www-data";'
+
+    # Add Spatial Reference Systems from PostGIS
+    $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/spatial_ref_sys.sql
+}
+
 startdb () {
     mkdir -p /var/run/postgresql/9.5-main.pg_stat_tmp
     _startservice postgresql
@@ -47,7 +67,7 @@ initdb () {
 
     startdb
     createuser
-    createdb
+    createdb gis
 }
 
 createuser () {
@@ -55,28 +75,6 @@ createuser () {
     echo "Creating user $USER"
     setuser postgres createuser -s $USER
 }
-
-createdb () {
-    dbname=gis
-    echo "Creating database $dbname"
-    cd /var/www
-
-    # Create the database
-    setuser postgres createdb -O www-data $dbname
-
-    # Install the Postgis schema
-    $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/postgis.sql
-
-    #$asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
-    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;'
-
-    # Set the correct table ownership
-    $asweb psql -d $dbname -c 'ALTER TABLE geometry_columns OWNER TO "www-data"; ALTER TABLE spatial_ref_sys OWNER TO "www-data";'
-
-    # Add Spatial Reference Systems from PostGIS
-    $asweb psql -d $dbname -f /usr/share/postgresql/9.5/contrib/postgis-2.2/spatial_ref_sys.sql
-}
-
 
 import () {
     startdb
@@ -151,7 +149,8 @@ startservices_render_osm () {
 }
 
 startservices_postgis () {
-    startdb
+    #startdb
+    setuser 'postgres' /usr/lib/postgresql/9.5/bin/postgres -D /var/lib/postgresql/9.5/main/
 }
 
 render_osm () {
@@ -237,6 +236,29 @@ build_contours () {
     mv lon-*.osm.pbf contours.pbf
 }
 
+create_contours_db_from_file () {
+    dbname=contours
+    startdb
+
+    cd /data/contours/out
+
+    # load data with right style
+
+    echo "Creating database $dbname"
+
+    # Create the database
+    createdb $dbname
+
+    for X in ../*.shp.gz; do
+	    gunzip $X
+	    $asweb ogr2ogr -explodecollections -a_srs epsg:3857 -append -f "PostgreSQL" 'PG:dbname='$dbname''  -nln contours -lco DIM=2 ${X%.*}
+    	gzip ${X%.*}
+    done
+
+    echo "VACUUM ANALYSE;" | psql -d $dbname
+
+}
+
 create_contours_db () {
 
     #build_contours
@@ -251,9 +273,7 @@ create_contours_db () {
         die "No contours import file present: run build_contours before running create_contours_db"
 
     # Create contours database
-    setuser postgres createdb -O www-data contours
-
-    $asweb psql -d $dbname -c 'CREATE EXTENSION HSTORE;CREATE EXTENSION postgis'
+    createdb $dbname
 
     # Load contour file into database
     $asweb osm2pgsql --slim -d contours -C 12000 --number-processes 10 --style $HOME/OpenTopoMap/mapnik/osm2pgsql/contours.style ${import}

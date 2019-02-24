@@ -146,5 +146,6 @@ ADD help.txt /usr/local/share/doc/run/help.txt
 ADD run.sh /usr/local/sbin/run
 ENTRYPOINT ["/sbin/my_init", "--", "/usr/local/sbin/run"]
 
+
 # Default to showing the usage text
 CMD ["help"]
