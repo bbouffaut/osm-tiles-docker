@@ -355,6 +355,11 @@ startservices_render_opentopomap () {
     _startservice apache2
 }
 
+startservices_postgis_and_render_opentopomap () {
+    startservices_postgis
+    startservices_render_opentopomap
+}
+
 render_opentopomap () {
     configure_renderd_for_opentopomap
     render
