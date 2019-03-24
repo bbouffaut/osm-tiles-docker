@@ -1,0 +1,96 @@
+postgis:
+    #image: osm-tiles-server:2.0
+    #image: bbouffaut/osm-tiles-server:2.0
+    #image: ncareol/osm-tiles
+    image: registry.bbofamily.com/osm-tiles-server:2.1
+    hostname: postgis
+    volumes:
+        # keep postgresql database files on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_postgre:/var/lib/postgresql
+        # mount OSM data file from host into Docker container
+        - /srv/z1-db_data/osm-tiles-server_data/europe-latest.osm.pbf:/tmp/europe-latest.osm.pbf
+        # mount OSM data file from host into Docker container
+        - /srv/z1-db_data/osm-tiles-server_data/srtm_list.txt:/tmp/srtm_list.txt
+        # keep OSM tiles on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_data:/data
+    environment:
+        OSM_IMPORT_FILE: '/tmp/europe-latest.osm.pbf'
+        SRTM_LIST_FILE: '/tmp/srtm_list.txt'
+        OSM_IMPORT_CACHE: '2000'
+        OSM_MAX_ZOOM: '14'
+        OSM_RENDER_FORCE: 'false'
+    expose:
+        - 5432
+    ports:
+        - "5432:5432"
+    command: 'startservices_postgis'
+
+
+opentopomap:
+    #image: osm-tiles-server:2.0
+    #image: bbouffaut/osm-tiles-server:2.0
+    #image: ncareol/osm-tiles
+    image: registry.bbofamily.com/osm-tiles-server:2.1
+    hostname: opentopomap
+    links:
+        - postgis
+    volumes:
+        # keep OSM tiles on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_mod_tile:/var/lib/mod_tile
+    environment:
+        OSM_MAX_ZOOM: '14'
+        OSM_RENDER_FORCE: 'false'
+    ports:
+        - "8383:80"
+    extra_hosts:
+        - "postgis:172.17.0.7"
+    command: 'startservices_render_opentopomap'
+
+osm:
+    #image: osm-tiles-server:2.0
+    #image: bbouffaut/osm-tiles-server:2.0
+    #image: ncareol/osm-tiles
+    image: registry.bbofamily.com/osm-tiles-server:2.1
+    hostname: osm
+    links:
+        - postgis
+    volumes:
+        # keep OSM tiles on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_mod_tile:/var/lib/mod_tile
+    environment:
+        OSM_MAX_ZOOM: '14'
+        OSM_RENDER_FORCE: 'false'
+    ports:
+        - "8282:80"
+    command: 'startservices_render_osm'
+
+all:
+    #image: osm-tiles-server:2.0
+    #image: bbouffaut/osm-tiles-server:2.0
+    #image: ncareol/osm-tiles
+    image: registry.bbofamily.com/osm-tiles-server:2.1
+    hostname: postgis
+    volumes:
+        # keep postgresql database files on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_postgre:/var/lib/postgresql
+        # mount OSM data file from host into Docker container
+        - /srv/z1-db_data/osm-tiles-server_data/europe-latest.osm.pbf:/tmp/europe-latest.osm.pbf
+        # mount OSM data file from host into Docker container
+        - /srv/z1-db_data/osm-tiles-server_data/srtm_list.txt:/tmp/srtm_list.txt
+        # keep OSM tiles on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_data:/data
+        # keep OSM tiles on host in ./docker/osm:
+        - /srv/z1-db_data/osm-tiles-server_mod_tile:/var/lib/mod_tile
+    environment:
+        OSM_IMPORT_FILE: '/tmp/europe-latest.osm.pbf'
+        SRTM_LIST_FILE: '/tmp/srtm_list.txt'
+        OSM_IMPORT_CACHE: '2000'
+        OSM_MAX_ZOOM: '14'
+        OSM_RENDER_FORCE: 'false'
+    expose:
+        - 5432
+        - 80
+    ports:
+        - "5432:5432"
+        - "8383:80"
+    command: 'startservices_postgis'
