@@ -93,4 +93,4 @@ all:
     ports:
         - "5432:5432"
         - "8383:80"
-    command: 'startservices_postgis'
+    command: 'startservices_postgis_and_render_opentopomap'
